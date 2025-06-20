@@ -8,5 +8,4 @@ Pillow
 streamlit
 spacy
 scikit-learn
-
-
+sumy
