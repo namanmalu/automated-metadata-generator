@@ -7,5 +7,6 @@ pdf2image
 Pillow
 streamlit
 spacy
+scikit-learn
 
 
