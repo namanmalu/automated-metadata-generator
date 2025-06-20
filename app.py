@@ -4,7 +4,7 @@ import json
 from metadata_utils import extract_metadata
 
 st.set_page_config(
-    page_title="Smart Metadata Generator",
+    page_title="Automated Metadata Generator",
     page_icon="📄",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -41,22 +41,21 @@ st.markdown("""
         margin-bottom: 0;
         font-weight: 400;
     }
-    .features-row {
+    .feature-container {
         display: flex;
-        flex-wrap: wrap;
-        justify-content: center;
-        gap: 32px;
+        overflow-x: auto;
+        gap: 24px;
+        padding-bottom: 12px;
         margin-bottom: 36px;
     }
     .feature-card {
+        flex: 0 0 auto;
         background: linear-gradient(135deg, #23243a 60%, #3e206d 100%);
         border-radius: 18px;
         box-shadow: 0 4px 32px 0 rgba(72,0,128,0.25);
-        padding: 28px 30px 22px 30px;
+        padding: 24px 26px 20px 26px;
         min-width: 280px;
-        max-width: 340px;
         color: #fff;
-        margin-bottom: 0;
         border: 1.5px solid #4B8BBE33;
         transition: transform 0.18s;
     }
@@ -65,27 +64,17 @@ st.markdown("""
         box-shadow: 0 8px 48px 0 rgba(72,0,128,0.38);
         border: 1.5px solid #4B8BBE;
     }
-    .stFileUploader > div > div {
-        background-color: #23243a;
-        padding: 14px;
-        border-radius: 12px;
-        border: 2px dashed #4B8BBE;
-        color: #fff;
-    }
-    .stButton button {
-        background: linear-gradient(90deg, #ff3c78, #4B8BBE);
-        color: white;
-        border-radius: 8px;
-        border: none;
-        padding: 10px 22px;
+    .feature-title {
+        font-size: 1.15em;
         font-weight: 600;
-        font-size: 1em;
-        box-shadow: 0 2px 8px rgba(50, 50, 93, 0.18);
-        transition: 0.2s;
+        margin-bottom: 0.5em;
+        color: #ff3c78;
+        letter-spacing: 1px;
     }
-    .stButton button:hover {
-        background: linear-gradient(90deg, #4B8BBE, #ff3c78);
-        color: #ffeb3b;
+    .feature-desc {
+        font-size: 1em;
+        color: #e0e7ef;
+        font-weight: 400;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -94,7 +83,7 @@ st.markdown("""
 st.markdown("""
     <div class="main-banner">
         <div>
-            <div class="banner-title">📄 Smart Metadata Generator</div>
+            <div class="banner-title">📄 Automated Metadata Generator</div>
             <div class="banner-subtitle">
                 AI-powered, automatic, and beautifully simple — for DOCX, PDF, and TXT files.
             </div>
@@ -103,7 +92,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- Features Section ---
-st.markdown('<div class="features-row">', unsafe_allow_html=True)
+st.markdown('<div class="feature-container">', unsafe_allow_html=True)
 features = [
     {"title": "Automating Metadata Generation", "desc": "Auto-generates metadata for diverse documents."},
     {"title": "Content Extraction", "desc": "Extracts text from PDF, DOCX, TXT using OCR where needed."},
@@ -165,5 +154,4 @@ st.markdown("""
         Made with ❤️ using Streamlit & Python NLP · 2025
     </div>
 """, unsafe_allow_html=True)
-
 
