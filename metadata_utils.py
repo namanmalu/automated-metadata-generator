@@ -6,6 +6,8 @@ import pytesseract
 from pdf2image import convert_from_path
 from collections import Counter
 import spacy
+import nltk
+nltk.download('punkt')
 from en_core_web_sm import load as load_model
 from sumy.parsers.plaintext import PlaintextParser
 from sumy.nlp.tokenizers import Tokenizer
