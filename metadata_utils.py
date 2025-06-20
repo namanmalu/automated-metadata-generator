@@ -1,168 +1,153 @@
-import streamlit as st
 import os
-import json
-from metadata_utils import extract_metadata
+import re
+import docx
+import fitz  # PyMuPDF
+import pytesseract
+from pdf2image import convert_from_path
+from collections import Counter
+import spacy
+from en_core_web_sm import load as load_model
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
-st.set_page_config(
-    page_title="Smart Metadata Generator",
-    page_icon="📄",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+nlp = load_model()
 
-# --- Custom CSS ---
-st.markdown("""
-    <style>
-    body, .stApp {
-        background: linear-gradient(120deg, #18181c 0%, #23243a 100%) !important;
-        color: #fff !important;
-    }
-    .main-banner {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: linear-gradient(90deg, #141e30 0%, #243b55 100%);
-        border-radius: 24px;
-        padding: 40px 32px;
-        margin-bottom: 32px;
-        box-shadow: 0 8px 40px 0 rgba(0,0,0,0.45);
-    }
-    .banner-title {
-        font-size: 3em;
-        font-weight: bold;
-        color: #fff;
-        margin-bottom: 0.2em;
-        letter-spacing: 2px;
-        text-shadow: 0 4px 32px #0008;
-    }
-    .banner-subtitle {
-        font-size: 1.25em;
-        color: #e0e7ef;
-        margin-bottom: 0;
-        font-weight: 400;
-    }
-    .features-row {
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: center;
-        gap: 32px;
-        margin-bottom: 36px;
-    }
-    .feature-card {
-        background: linear-gradient(135deg, #23243a 60%, #3e206d 100%);
-        border-radius: 18px;
-        box-shadow: 0 4px 32px 0 rgba(72,0,128,0.25);
-        padding: 28px 30px 22px 30px;
-        min-width: 280px;
-        max-width: 340px;
-        color: #fff;
-        margin-bottom: 0;
-        border: 1.5px solid #4B8BBE33;
-        transition: transform 0.18s;
-    }
-    .feature-card:hover {
-        transform: scale(1.04) translateY(-6px);
-        box-shadow: 0 8px 48px 0 rgba(72,0,128,0.38);
-        border: 1.5px solid #4B8BBE;
-    }
-    .stFileUploader > div > div {
-        background-color: #23243a;
-        padding: 14px;
-        border-radius: 12px;
-        border: 2px dashed #4B8BBE;
-        color: #fff;
-    }
-    .stButton button {
-        background: linear-gradient(90deg, #ff3c78, #4B8BBE);
-        color: white;
-        border-radius: 8px;
-        border: none;
-        padding: 10px 22px;
-        font-weight: 600;
-        font-size: 1em;
-        box-shadow: 0 2px 8px rgba(50, 50, 93, 0.18);
-        transition: 0.2s;
-    }
-    .stButton button:hover {
-        background: linear-gradient(90deg, #4B8BBE, #ff3c78);
-        color: #ffeb3b;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# --- Main Banner ---
-st.markdown("""
-    <div class="main-banner">
-        <div>
-            <div class="banner-title">📄 Smart Metadata Generator</div>
-            <div class="banner-subtitle">
-                AI-powered, automatic, and beautifully simple — for DOCX, PDF, and TXT files.
-            </div>
-        </div>
-    </div>
-""", unsafe_allow_html=True)
-
-# --- Features ---
-st.markdown('<div class="features-row">', unsafe_allow_html=True)
-features = [
-    {"title": "Automating Metadata Generation", "desc": "Auto-generates metadata for diverse documents."},
-    {"title": "Content Extraction", "desc": "Extracts text from PDF, DOCX, TXT using OCR where needed."},
-    {"title": "Semantic Content Identification", "desc": "Leverages key sections of documents intelligently."},
-    {"title": "Structured Metadata Creation", "desc": "Outputs clean, structured, machine-readable metadata."},
-    {"title": "Easy-to-Use Interface", "desc": "Simple web app with beautiful design and usability."},
-    {"title": "Supports Multiple Formats", "desc": "Works with .docx, .pdf, and .txt files."},
+SECTION_HEADINGS = [
+    "abstract", "introduction", "objective", "problem",
+    "conclusion", "summary", "results", "discussion"
 ]
-for f in features:
-    st.markdown(f"""
-        <div class="feature-card">
-            <div class="feature-title">{f['title']}</div>
-            <div class="feature-desc">{f['desc']}</div>
-        </div>
-    """, unsafe_allow_html=True)
-st.markdown('</div>', unsafe_allow_html=True)
 
-# --- File Upload & Processing ---
-st.markdown("""<h3 style='color:#ff3c78;'>📂 Upload Your Document (DOCX / PDF / TXT)</h3>""", unsafe_allow_html=True)
-file = st.file_uploader("Drag or click to upload a file", type=["docx", "pdf", "txt"])
+def get_named_entities(text):
+    doc = nlp(text)
+    entities = {"people": [], "organizations": [], "locations": [], "dates": []}
+    for ent in doc.ents:
+        if ent.label_ == "PERSON":
+            entities["people"].append(ent.text)
+        elif ent.label_ == "ORG":
+            entities["organizations"].append(ent.text)
+        elif ent.label_ == "GPE":
+            entities["locations"].append(ent.text)
+        elif ent.label_ == "DATE":
+            entities["dates"].append(ent.text)
+    for key in entities:
+        entities[key] = list(set(entities[key]))
+    return entities
 
-if file:
-    file_ext = file.name.split(".")[-1].lower()
-    path = f"temp_uploaded.{file_ext}"
-    with open(path, "wb") as f:
-        f.write(file.read())
+def extract_sections(text):
+    lines = text.split("\n")
+    current_section = None
+    sections = {}
+    for line in lines:
+        clean_line = line.strip()
+        line_lower = clean_line.lower()
+        if any(heading in line_lower for heading in SECTION_HEADINGS):
+            clean_heading = re.sub(r"^[0-9]+[.)]?\s*", "", clean_line)
+            current_section = clean_heading
+            sections[current_section] = ""
+        elif current_section:
+            sections[current_section] += clean_line + " "
+    return sections
 
-    with st.spinner("🔍 Extracting metadata..."):
-        metadata = extract_metadata(path)
+def get_top_sentences(text, n=5):
+    sentences = re.split(r'(?<=[.!?]) +', text)
+    if len(sentences) <= n:
+        return sentences
+    tfidf = TfidfVectorizer(stop_words='english')
+    tfidf_matrix = tfidf.fit_transform(sentences)
+    sim_scores = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix).flatten()
+    top_indices = sim_scores.argsort()[-n:][::-1]
+    return [sentences[i] for i in top_indices if i < len(sentences)]
 
-        if "error" in metadata:
-            st.error(metadata["error"])
-        else:
-            if "filename" in metadata:
-                metadata["filename"] = file.name
-            metadata = {k: v for k, v in metadata.items() if v and v != [] and v != {} and v != "None"}
+def structure_metadata(metadata_dict):
+    structured = {}
+    for key, value in metadata_dict.items():
+        if isinstance(value, list):
+            structured[key] = [str(v).strip() for v in value if str(v).strip()]
+        elif isinstance(value, dict):
+            structured[key] = {k: list(set(map(str, v))) for k, v in value.items() if isinstance(v, list)}
+        elif value not in [None, "", "None"]:
+            structured[key] = str(value).strip()
+    return structured
 
-            st.markdown("""
-                <div class="sexy-card">
-                    <h4 style='color:#4B8BBE;'>✅ Extracted Metadata:</h4>
-            """, unsafe_allow_html=True)
-            st.json(metadata)
-            st.markdown("</div>", unsafe_allow_html=True)
+def extract_smart_metadata(text, filename=""):
+    words = re.findall(r'\b\w{4,}\b', text.lower())
+    common_words = Counter(words).most_common(10)
+    top_sentences = get_top_sentences(text)
+    entities = get_named_entities(text)
+    sections = extract_sections(text)
 
-            st.download_button(
-                "⬇️ Download Metadata (JSON)",
-                json.dumps(metadata, indent=4),
-                file_name="metadata.json",
-                mime="application/json"
-            )
+    summary = sections.get("summary", "") or sections.get("conclusion", "") or " ".join(top_sentences[:2])
+    objective = sections.get("objective", "") or sections.get("introduction", "") or " ".join(top_sentences[2:4])
 
-    os.remove(path)
-else:
-    st.info("Please upload a DOCX, PDF, or TXT file to get started.")
+    metadata = {
+        "filename": filename,
+        "word_count": len(words),
+        "character_count": len(text),
+        "top_keywords": [word for word, _ in common_words],
+        "key_sentences": top_sentences,
+        "summary": summary.strip(),
+        "purpose": objective.strip(),
+        "named_entities": entities,
+        "sections_found": list(sections.keys())
+    }
 
-# --- Footer ---
-st.markdown("""
-    <hr style="margin-top: 3em; margin-bottom: 1em; border: 1px solid #333;">
-    <div style="text-align: center; color: #888; font-size: 0.9em;">
-        Made with ❤️ using Streamlit & Python NLP · 2025
-    </div>
-""", unsafe_allow_html=True)
+    return structure_metadata(metadata)
+
+def extract_docx_metadata(docx_path):
+    doc = docx.Document(docx_path)
+    full_text = "\n".join([para.text for para in doc.paragraphs])
+    title = doc.paragraphs[0].text.strip() if doc.paragraphs else "Untitled"
+    metadata = extract_smart_metadata(full_text, os.path.basename(docx_path))
+    metadata["title"] = title
+    return structure_metadata(metadata)
+
+def extract_pdf_metadata(pdf_path):
+    text = ""
+    try:
+        with fitz.open(pdf_path) as doc:
+            for page in doc:
+                page_text = page.get_text()
+                if page_text.strip():
+                    text += page_text
+        if not text.strip():
+            images = convert_from_path(pdf_path)
+            for img in images:
+                text += pytesseract.image_to_string(img)
+    except Exception as e:
+        text = f"Error reading PDF: {str(e)}"
+    return structure_metadata(extract_smart_metadata(text, os.path.basename(pdf_path)))
+
+def extract_txt_metadata(txt_path):
+    with open(txt_path, 'r', encoding='utf-8') as f:
+        text = f.read()
+    return structure_metadata(extract_smart_metadata(text, os.path.basename(txt_path)))
+
+def extract_metadata(file_path):
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext == ".pdf":
+        return extract_pdf_metadata(file_path)
+    elif ext == ".docx":
+        return extract_docx_metadata(file_path)
+    elif ext == ".txt":
+        return extract_txt_metadata(file_path)
+    else:
+        return structure_metadata({
+            "error": "Unsupported file type",
+            "filename": os.path.basename(file_path)
+        })
+
+def convert_metadata_to_csv(metadata):
+    from io import StringIO
+    import csv
+
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Field", "Value"])
+    for key, value in metadata.items():
+        if isinstance(value, list):
+            value = ", ".join(map(str, value))
+        elif isinstance(value, dict):
+            value = ", ".join([f"{k}: {', '.join(v)}" for k, v in value.items()])
+        writer.writerow([key, value])
+    return output.getvalue()
+
