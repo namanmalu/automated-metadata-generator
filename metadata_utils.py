@@ -7,7 +7,7 @@ from pdf2image import convert_from_path
 from collections import Counter
 import io
 import json
-from en_core_web_sm import load as load_model
+from __init__.py import load as load_model
 nlp = load_model()
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
