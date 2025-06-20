@@ -1,0 +1,7 @@
+
+{
+  "lang": "en",
+  "name": "core_web_sm",
+  "pipeline": ["tok2vec", "tagger", "parser", "ner"],
+  "version": "3.5.0"
+}
