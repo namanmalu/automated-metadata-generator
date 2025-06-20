@@ -1,0 +1,8 @@
+Hi, this is a quick demo of the Automated Metadata Generator web app.
+
+1. Open the app using: `streamlit run app.py`
+2. Upload your .docx file.
+3. The app will display metadata like title, authors, keywords, etc.
+4. This helps in automating the document classification and discovery process.
+
+Thank you!
