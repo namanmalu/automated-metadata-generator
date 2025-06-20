@@ -4,10 +4,6 @@ import os
 import json
 from PIL import Image
 
-# For Lottie animation
-from streamlit_lottie import st_lottie
-import requests
-
 # Page config
 st.set_page_config(
     page_title="Smart Metadata Generator",
@@ -76,32 +72,18 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- Lottie Animation Loader ---
-def load_lottieurl(url):
-    r = requests.get(url)
-    if r.status_code != 200:
-        return None
-    return r.json()
-
 # --- Main Banner ---
 with st.container():
-    col1, col2 = st.columns([2,1])
-    with col1:
-        st.markdown("""
-            <div class="main-banner">
-                <div>
-                    <div class="banner-title">📄 Smart Metadata Generator</div>
-                    <div class="banner-subtitle">
-                        Understand your documents at a glance with NLP-powered metadata extraction.
-                    </div>
+    st.markdown("""
+        <div class="main-banner">
+            <div>
+                <div class="banner-title">📄 Smart Metadata Generator</div>
+                <div class="banner-subtitle">
+                    Understand your documents at a glance with NLP-powered metadata extraction.
                 </div>
             </div>
-        """, unsafe_allow_html=True)
-    with col2:
-        lottie_url = "https://assets2.lottiefiles.com/packages/lf20_jcikwtux.json"
-        lottie_json = load_lottieurl(lottie_url)
-        if lottie_json:
-            st_lottie(lottie_json, height=120, key="header_anim")
+        </div>
+    """, unsafe_allow_html=True)
 
 # --- Sidebar ---
 with st.sidebar:
