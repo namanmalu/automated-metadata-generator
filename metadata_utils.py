@@ -19,19 +19,17 @@ SECTION_HEADINGS = [
 
 def get_named_entities(text):
     doc = nlp(text)
-    entities = {"people": [], "organizations": [], "locations": [], "dates": []}
+    entities = {}
     for ent in doc.ents:
         if ent.label_ == "PERSON":
-            entities["people"].append(ent.text)
+            entities.setdefault("people", set()).add(ent.text)
         elif ent.label_ == "ORG":
-            entities["organizations"].append(ent.text)
+            entities.setdefault("organizations", set()).add(ent.text)
         elif ent.label_ == "GPE":
-            entities["locations"].append(ent.text)
+            entities.setdefault("locations", set()).add(ent.text)
         elif ent.label_ == "DATE":
-            entities["dates"].append(ent.text)
-    for key in entities:
-        entities[key] = list(set(entities[key]))
-    return entities
+            entities.setdefault("dates", set()).add(ent.text)
+    return {k: list(v) for k, v in entities.items() if v}
 
 def extract_sections(text):
     lines = text.split("\n")
@@ -41,43 +39,38 @@ def extract_sections(text):
         clean_line = line.strip()
         line_lower = clean_line.lower()
         if any(heading in line_lower for heading in SECTION_HEADINGS):
-            clean_heading = re.sub(r"^[0-9]+[.)]?\s*", "", clean_line)
+            clean_heading = re.sub(r"^[0-9]+[.)]?\\s*", "", clean_line)
             current_section = clean_heading
             sections[current_section] = ""
         elif current_section:
             sections[current_section] += clean_line + " "
-    return sections
+    return {k: v.strip() for k, v in sections.items() if v.strip()}
 
 def get_top_sentences(text, n=5):
     sentences = re.split(r'(?<=[.!?]) +', text)
     if len(sentences) <= n:
-        return sentences
+        return [s.strip() for s in sentences if s.strip()]
     tfidf = TfidfVectorizer(stop_words='english')
     tfidf_matrix = tfidf.fit_transform(sentences)
     sim_scores = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix).flatten()
     top_indices = sim_scores.argsort()[-n:][::-1]
-    return [sentences[i] for i in top_indices if i < len(sentences)]
+    return [sentences[i].strip() for i in top_indices if sentences[i].strip()]
 
 def structure_metadata(metadata_dict):
-    structured = {}
-    for key, value in metadata_dict.items():
-        if isinstance(value, list):
-            structured[key] = [str(v).strip() for v in value if str(v).strip()]
-        elif isinstance(value, dict):
-            structured[key] = {k: list(set(map(str, v))) for k, v in value.items() if isinstance(v, list)}
-        elif value not in [None, "", "None"]:
-            structured[key] = str(value).strip()
-    return structured
+    return {
+        k: v for k, v in metadata_dict.items()
+        if v and v != [] and v != {} and v != "None"
+    }
 
 def extract_smart_metadata(text, filename=""):
-    words = re.findall(r'\b\w{4,}\b', text.lower())
+    words = re.findall(r'\\b\\w{4,}\\b', text.lower())
     common_words = Counter(words).most_common(10)
     top_sentences = get_top_sentences(text)
     entities = get_named_entities(text)
     sections = extract_sections(text)
 
-    summary = sections.get("summary", "") or sections.get("conclusion", "") or " ".join(top_sentences[:2])
-    objective = sections.get("objective", "") or sections.get("introduction", "") or " ".join(top_sentences[2:4])
+    summary = sections.get("summary") or sections.get("conclusion") or " ".join(top_sentences[:2])
+    objective = sections.get("objective") or sections.get("introduction") or " ".join(top_sentences[2:4])
 
     metadata = {
         "filename": filename,
@@ -85,12 +78,11 @@ def extract_smart_metadata(text, filename=""):
         "character_count": len(text),
         "top_keywords": [word for word, _ in common_words],
         "key_sentences": top_sentences,
-        "summary": summary.strip(),
-        "purpose": objective.strip(),
+        "summary": summary.strip() if summary else None,
+        "purpose": objective.strip() if objective else None,
         "named_entities": entities,
-        "sections_found": list(sections.keys())
+        "sections_found": list(sections.keys()) if sections else None
     }
-
     return structure_metadata(metadata)
 
 def extract_docx_metadata(docx_path):
@@ -98,7 +90,8 @@ def extract_docx_metadata(docx_path):
     full_text = "\n".join([para.text for para in doc.paragraphs])
     title = doc.paragraphs[0].text.strip() if doc.paragraphs else "Untitled"
     metadata = extract_smart_metadata(full_text, os.path.basename(docx_path))
-    metadata["title"] = title
+    if title and title != "Untitled":
+        metadata["title"] = title
     return structure_metadata(metadata)
 
 def extract_pdf_metadata(pdf_path):
@@ -108,7 +101,7 @@ def extract_pdf_metadata(pdf_path):
             for page in doc:
                 page_text = page.get_text()
                 if page_text.strip():
-                    text += page_text
+                    text += page_text + "\n"
         if not text.strip():
             images = convert_from_path(pdf_path)
             for img in images:
