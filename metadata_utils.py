@@ -7,8 +7,9 @@ from pdf2image import convert_from_path
 from collections import Counter
 import spacy
 from en_core_web_sm import load as load_model
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+from sumy.parsers.plaintext import PlaintextParser
+from sumy.nlp.tokenizers import Tokenizer
+from sumy.summarizers.text_rank import TextRankSummarizer
 
 nlp = load_model()
 
@@ -47,14 +48,10 @@ def extract_sections(text):
     return {k: v.strip() for k, v in sections.items() if v.strip()}
 
 def get_top_sentences(text, n=5):
-    sentences = re.split(r'(?<=[.!?]) +', text)
-    if len(sentences) <= n:
-        return [s.strip() for s in sentences if s.strip()]
-    tfidf = TfidfVectorizer(stop_words='english')
-    tfidf_matrix = tfidf.fit_transform(sentences)
-    sim_scores = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix).flatten()
-    top_indices = sim_scores.argsort()[-n:][::-1]
-    return [sentences[i].strip() for i in top_indices if sentences[i].strip()]
+    parser = PlaintextParser.from_string(text, Tokenizer("english"))
+    summarizer = TextRankSummarizer()
+    summary = summarizer(parser.document, n)
+    return [str(sentence) for sentence in summary if str(sentence).strip()]
 
 def structure_metadata(metadata_dict):
     return {
@@ -143,4 +140,5 @@ def convert_metadata_to_csv(metadata):
             value = ", ".join([f"{k}: {', '.join(v)}" for k, v in value.items()])
         writer.writerow([key, value])
     return output.getvalue()
+
 
