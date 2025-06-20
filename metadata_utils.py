@@ -7,8 +7,45 @@ from pdf2image import convert_from_path
 from collections import Counter
 import io
 import json
+import spacy
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+
+# Load spaCy NER model
+nlp = spacy.load("en_core_web_sm")
+
+# Common section headers to help semantic segmentation
+SECTION_HEADINGS = ["abstract", "introduction", "objective", "problem", "conclusion", "summary", "results", "discussion"]
+
+def get_named_entities(text):
+    doc = nlp(text)
+    entities = {"people": [], "organizations": [], "locations": [], "dates": []}
+    for ent in doc.ents:
+        if ent.label_ == "PERSON":
+            entities["people"].append(ent.text)
+        elif ent.label_ == "ORG":
+            entities["organizations"].append(ent.text)
+        elif ent.label_ == "GPE":
+            entities["locations"].append(ent.text)
+        elif ent.label_ == "DATE":
+            entities["dates"].append(ent.text)
+    # Remove duplicates
+    for key in entities:
+        entities[key] = list(set(entities[key]))
+    return entities
+
+def extract_sections(text):
+    lines = text.split("\n")
+    current_section = None
+    sections = {}
+    for line in lines:
+        line_lower = line.strip().lower()
+        if any(heading in line_lower for heading in SECTION_HEADINGS):
+            current_section = line.strip()
+            sections[current_section] = ""
+        elif current_section:
+            sections[current_section] += line.strip() + " "
+    return sections
 
 def get_top_sentences(text, n=5):
     sentences = re.split(r'(?<=[.!?]) +', text)
@@ -25,31 +62,41 @@ def structure_metadata(metadata_dict):
     for key, value in metadata_dict.items():
         if isinstance(value, list):
             structured[key] = [str(v).strip() for v in value if str(v).strip()]
+        elif isinstance(value, dict):
+            structured[key] = {k: list(set(map(str, v))) for k, v in value.items() if isinstance(v, list)}
         else:
             structured[key] = str(value).strip()
     return structured
+
+def extract_smart_metadata(text, filename=""):
+    words = re.findall(r'\b\w{4,}\b', text.lower())
+    common_words = Counter(words).most_common(10)
+    top_sentences = get_top_sentences(text)
+    entities = get_named_entities(text)
+    sections = extract_sections(text)
+
+    summary = sections.get("summary", "") or sections.get("conclusion", "") or " ".join(top_sentences[:2])
+    objective = sections.get("objective", "") or sections.get("introduction", "") or " ".join(top_sentences[2:4])
+
+    metadata = {
+        "filename": filename,
+        "word_count": len(words),
+        "character_count": len(text),
+        "top_keywords": [word for word, _ in common_words],
+        "key_sentences": top_sentences,
+        "summary": summary.strip(),
+        "purpose": objective.strip(),
+        "named_entities": entities,
+        "sections_found": list(sections.keys())
+    }
+    return structure_metadata(metadata)
 
 def extract_docx_metadata(docx_path):
     doc = docx.Document(docx_path)
     full_text = "\n".join([para.text for para in doc.paragraphs])
     title = doc.paragraphs[0].text.strip() if doc.paragraphs else "Untitled"
-    emails = re.findall(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", full_text)
-    authors = re.findall(r"\n([A-Z][a-z]+\s[A-Z][a-z]+)\s+\nElectrical Engineering", full_text)
-    institution = "IIT Roorkee" if "IIT Roorkee" in full_text else "Unknown"
-    words = re.findall(r'\b\w{4,}\b', full_text.lower())
-    common_words = Counter(words).most_common(10)
-    top_sentences = get_top_sentences(full_text)
-    metadata = {
-        "filename": os.path.basename(docx_path),
-        "title": title,
-        "authors": list(set(authors)),
-        "institution": institution,
-        "email_ids": list(set(emails)),
-        "word_count": len(words),
-        "character_count": len(full_text),
-        "top_keywords": [word for word, _ in common_words],
-        "key_sentences": top_sentences
-    }
+    metadata = extract_smart_metadata(full_text, os.path.basename(docx_path))
+    metadata["title"] = title
     return structure_metadata(metadata)
 
 def extract_pdf_metadata(pdf_path):
@@ -66,32 +113,12 @@ def extract_pdf_metadata(pdf_path):
                 text += pytesseract.image_to_string(img)
     except Exception as e:
         text = f"Error reading PDF: {str(e)}"
-    words = re.findall(r'\b\w{4,}\b', text.lower())
-    common_words = Counter(words).most_common(10)
-    top_sentences = get_top_sentences(text)
-    metadata = {
-        "filename": os.path.basename(pdf_path),
-        "word_count": len(words),
-        "character_count": len(text),
-        "top_keywords": [word for word, _ in common_words],
-        "key_sentences": top_sentences
-    }
-    return structure_metadata(metadata)
+    return structure_metadata(extract_smart_metadata(text, os.path.basename(pdf_path)))
 
 def extract_txt_metadata(txt_path):
     with open(txt_path, 'r', encoding='utf-8') as f:
         text = f.read()
-    words = re.findall(r'\b\w{4,}\b', text.lower())
-    common_words = Counter(words).most_common(10)
-    top_sentences = get_top_sentences(text)
-    metadata = {
-        "filename": os.path.basename(txt_path),
-        "word_count": len(words),
-        "character_count": len(text),
-        "top_keywords": [word for word, _ in common_words],
-        "key_sentences": top_sentences
-    }
-    return structure_metadata(metadata)
+    return structure_metadata(extract_smart_metadata(text, os.path.basename(txt_path)))
 
 def extract_metadata(file_path):
     ext = os.path.splitext(file_path)[1].lower()
@@ -114,5 +141,7 @@ def convert_metadata_to_csv(metadata):
     for key, value in metadata.items():
         if isinstance(value, list):
             value = ", ".join(map(str, value))
+        elif isinstance(value, dict):
+            value = ", ".join([f"{k}: {', '.join(v)}" for k, v in value.items()])
         writer.writerow([key, value])
     return output.getvalue()
