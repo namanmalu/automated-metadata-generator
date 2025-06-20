@@ -15,8 +15,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 
-# Load spaCy NER model
-nlp = spacy.load("en_core_web_sm")
+
 
 # Common section headers to help semantic segmentation
 SECTION_HEADINGS = ["abstract", "introduction", "objective", "problem", "conclusion", "summary", "results", "discussion"]
