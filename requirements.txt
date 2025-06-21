@@ -1,10 +1,9 @@
-
+streamlit
 python-docx
 pymupdf
 pytesseract
 pdf2image
 Pillow
-streamlit
 spacy
 scikit-learn
 networkx
