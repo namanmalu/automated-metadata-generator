@@ -6,12 +6,6 @@ import pytesseract
 from pdf2image import convert_from_path
 from collections import Counter
 import spacy
-import nltk
-nltk.download('punkt')
-from en_core_web_sm import load as load_model
-from sumy.parsers.plaintext import PlaintextParser
-from sumy.nlp.tokenizers import Tokenizer
-from sumy.summarizers.text_rank import TextRankSummarizer
 
 nlp = load_model()
 
@@ -81,7 +75,7 @@ def extract_smart_metadata(text, filename=""):
     entities = get_named_entities(text)
     sections = extract_sections(text)
 
-    summary = sections.get("summary") or sections.get("conclusion") or " ".join(top_sentences[:2])
+    summary = " ".join(top_sentences[:3])
     objective = sections.get("objective") or sections.get("introduction") or " ".join(top_sentences[2:4])
 
     metadata = {
