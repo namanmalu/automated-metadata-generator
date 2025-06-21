@@ -3,7 +3,7 @@ import re
 import docx
 import fitz  # PyMuPDF
 import pytesseract
-from pdf2image import convert_from_path
+
 from collections import Counter
 import spacy
 from en_core_web_sm import load as load_model
@@ -102,6 +102,7 @@ def extract_docx_metadata(docx_path):
     return structure_metadata(metadata)
 
 def extract_pdf_metadata(pdf_path):
+    from pdf2image import convert_from_path
     text = ""
     try:
         with fitz.open(pdf_path) as doc:
