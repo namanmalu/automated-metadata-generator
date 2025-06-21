@@ -6,8 +6,8 @@ import pytesseract
 from pdf2image import convert_from_path
 from collections import Counter
 import spacy
-nlp = spacy.load("en_core_web_sm")
 
+nlp = spacy.load("en_core_web_sm")
 
 SECTION_HEADINGS = [
     "abstract", "introduction", "objective", "problem",
