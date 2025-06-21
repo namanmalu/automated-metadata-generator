@@ -151,7 +151,7 @@ else:
 st.markdown("""
     <hr style="margin-top: 3em; margin-bottom: 1em; border: 1px solid #333;">
     <div style="text-align: center; color: #888; font-size: 0.9em;">
-        Made with ❤️ using Streamlit & Python NLP · 2025
+        Made with ❤️ using Streamlit & Python NLP by Naman Malu · 2025
     </div>
 """, unsafe_allow_html=True)
 
