@@ -3,7 +3,7 @@ import re
 import docx
 import fitz  # PyMuPDF
 import pytesseract
-
+from pdf2image import convert_from_path
 from collections import Counter
 import spacy
 from en_core_web_sm import load as load_model
@@ -19,18 +19,21 @@ SECTION_HEADINGS = [
 
 def get_named_entities(text):
     doc = nlp(text)
-    entities = {"people": [], "organizations": [], "locations": [], "dates": []}
-    for ent in doc.ents:
-        if ent.label_ == "PERSON":
-            entities["people"].append(ent.text)
-        elif ent.label_ == "ORG":
-            entities["organizations"].append(ent.text)
-        elif ent.label_ == "GPE":
-            entities["locations"].append(ent.text)
-        elif ent.label_ == "DATE":
-            entities["dates"].append(ent.text)
-    for key in entities:
-        entities[key] = list(set(entities[key]))
+    entities = {}
+    people = list(set([ent.text for ent in doc.ents if ent.label_ == "PERSON"]))
+    orgs = list(set([ent.text for ent in doc.ents if ent.label_ == "ORG"]))
+    gpes = list(set([ent.text for ent in doc.ents if ent.label_ == "GPE"]))
+    dates = list(set([ent.text for ent in doc.ents if ent.label_ == "DATE"]))
+
+    if people:
+        entities["people"] = people
+    if orgs:
+        entities["organizations"] = orgs
+    if gpes:
+        entities["locations"] = gpes
+    if dates:
+        entities["dates"] = dates
+
     return entities
 
 def extract_sections(text):
@@ -61,10 +64,10 @@ def get_top_sentences(text, n=5):
 def structure_metadata(metadata_dict):
     structured = {}
     for key, value in metadata_dict.items():
-        if isinstance(value, list):
+        if isinstance(value, list) and value:
             structured[key] = [str(v).strip() for v in value if str(v).strip()]
-        elif isinstance(value, dict):
-            structured[key] = {k: list(set(map(str, v))) for k, v in value.items() if isinstance(v, list)}
+        elif isinstance(value, dict) and value:
+            structured[key] = {k: v for k, v in value.items() if v}
         elif value not in [None, "", "None"]:
             structured[key] = str(value).strip()
     return structured
@@ -87,7 +90,7 @@ def extract_smart_metadata(text, filename=""):
         "key_sentences": top_sentences,
         "summary": summary.strip(),
         "purpose": objective.strip(),
-        "named_entities": entities,
+        "named_entities": entities if entities else None,
         "sections_found": list(sections.keys())
     }
 
@@ -102,7 +105,6 @@ def extract_docx_metadata(docx_path):
     return structure_metadata(metadata)
 
 def extract_pdf_metadata(pdf_path):
-    from pdf2image import convert_from_path
     text = ""
     try:
         with fitz.open(pdf_path) as doc:
