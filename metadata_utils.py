@@ -6,8 +6,11 @@ import pytesseract
 from pdf2image import convert_from_path
 from collections import Counter
 import spacy
+from en_core_web_sm import load as load_model
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
-nlp = spacy.load("en_core_web_sm")
+nlp = load_model()
 
 SECTION_HEADINGS = [
     "abstract", "introduction", "objective", "problem",
@@ -16,17 +19,19 @@ SECTION_HEADINGS = [
 
 def get_named_entities(text):
     doc = nlp(text)
-    entities = {}
+    entities = {"people": [], "organizations": [], "locations": [], "dates": []}
     for ent in doc.ents:
         if ent.label_ == "PERSON":
-            entities.setdefault("people", set()).add(ent.text)
+            entities["people"].append(ent.text)
         elif ent.label_ == "ORG":
-            entities.setdefault("organizations", set()).add(ent.text)
+            entities["organizations"].append(ent.text)
         elif ent.label_ == "GPE":
-            entities.setdefault("locations", set()).add(ent.text)
+            entities["locations"].append(ent.text)
         elif ent.label_ == "DATE":
-            entities.setdefault("dates", set()).add(ent.text)
-    return {k: list(v) for k, v in entities.items() if v}
+            entities["dates"].append(ent.text)
+    for key in entities:
+        entities[key] = list(set(entities[key]))
+    return entities
 
 def extract_sections(text):
     lines = text.split("\n")
@@ -36,47 +41,43 @@ def extract_sections(text):
         clean_line = line.strip()
         line_lower = clean_line.lower()
         if any(heading in line_lower for heading in SECTION_HEADINGS):
-            clean_heading = re.sub(r"^[0-9]+[.)]?\\s*", "", clean_line)
+            clean_heading = re.sub(r"^[0-9]+[.)]?\s*", "", clean_line)
             current_section = clean_heading
             sections[current_section] = ""
         elif current_section:
             sections[current_section] += clean_line + " "
-    return {k: v.strip() for k, v in sections.items() if v.strip()}
+    return sections
 
 def get_top_sentences(text, n=5):
-    import numpy as np
-    import networkx as nx
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    from sklearn.metrics.pairwise import cosine_similarity
-
     sentences = re.split(r'(?<=[.!?]) +', text)
-    sentences = [s.strip() for s in sentences if len(s.strip()) > 20]
     if len(sentences) <= n:
         return sentences
-
-    tfidf_matrix = TfidfVectorizer(stop_words='english').fit_transform(sentences)
-    sim_matrix = cosine_similarity(tfidf_matrix)
-
-    graph = nx.from_numpy_array(sim_matrix)
-    scores = nx.pagerank(graph)
-    ranked = sorted(((scores[i], s) for i, s in enumerate(sentences)), reverse=True)
-    return [s for _, s in ranked[:n]]
+    tfidf = TfidfVectorizer(stop_words='english')
+    tfidf_matrix = tfidf.fit_transform(sentences)
+    sim_scores = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix).flatten()
+    top_indices = sim_scores.argsort()[-n:][::-1]
+    return [sentences[i] for i in top_indices if i < len(sentences)]
 
 def structure_metadata(metadata_dict):
-    return {
-        k: v for k, v in metadata_dict.items()
-        if v and v != [] and v != {} and v != "None"
-    }
+    structured = {}
+    for key, value in metadata_dict.items():
+        if isinstance(value, list):
+            structured[key] = [str(v).strip() for v in value if str(v).strip()]
+        elif isinstance(value, dict):
+            structured[key] = {k: list(set(map(str, v))) for k, v in value.items() if isinstance(v, list)}
+        elif value not in [None, "", "None"]:
+            structured[key] = str(value).strip()
+    return structured
 
 def extract_smart_metadata(text, filename=""):
-    words = re.findall(r'\\b\\w{4,}\\b', text.lower())
+    words = re.findall(r'\b\w{4,}\b', text.lower())
     common_words = Counter(words).most_common(10)
     top_sentences = get_top_sentences(text)
     entities = get_named_entities(text)
     sections = extract_sections(text)
 
-    summary = " ".join(top_sentences[:3])
-    objective = sections.get("objective") or sections.get("introduction") or " ".join(top_sentences[2:4])
+    summary = sections.get("summary", "") or sections.get("conclusion", "") or " ".join(top_sentences[:2])
+    objective = sections.get("objective", "") or sections.get("introduction", "") or " ".join(top_sentences[2:4])
 
     metadata = {
         "filename": filename,
@@ -84,11 +85,12 @@ def extract_smart_metadata(text, filename=""):
         "character_count": len(text),
         "top_keywords": [word for word, _ in common_words],
         "key_sentences": top_sentences,
-        "summary": summary.strip() if summary else None,
-        "purpose": objective.strip() if objective else None,
+        "summary": summary.strip(),
+        "purpose": objective.strip(),
         "named_entities": entities,
-        "sections_found": list(sections.keys()) if sections else None
+        "sections_found": list(sections.keys())
     }
+
     return structure_metadata(metadata)
 
 def extract_docx_metadata(docx_path):
@@ -96,8 +98,7 @@ def extract_docx_metadata(docx_path):
     full_text = "\n".join([para.text for para in doc.paragraphs])
     title = doc.paragraphs[0].text.strip() if doc.paragraphs else "Untitled"
     metadata = extract_smart_metadata(full_text, os.path.basename(docx_path))
-    if title and title != "Untitled":
-        metadata["title"] = title
+    metadata["title"] = title
     return structure_metadata(metadata)
 
 def extract_pdf_metadata(pdf_path):
@@ -107,7 +108,7 @@ def extract_pdf_metadata(pdf_path):
             for page in doc:
                 page_text = page.get_text()
                 if page_text.strip():
-                    text += page_text + "\n"
+                    text += page_text
         if not text.strip():
             images = convert_from_path(pdf_path)
             for img in images:
@@ -149,4 +150,5 @@ def convert_metadata_to_csv(metadata):
             value = ", ".join([f"{k}: {', '.join(v)}" for k, v in value.items()])
         writer.writerow([key, value])
     return output.getvalue()
+
 
