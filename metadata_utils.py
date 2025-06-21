@@ -50,10 +50,23 @@ def extract_sections(text):
     return {k: v.strip() for k, v in sections.items() if v.strip()}
 
 def get_top_sentences(text, n=5):
-    parser = PlaintextParser.from_string(text, Tokenizer("english"))
-    summarizer = TextRankSummarizer()
-    summary = summarizer(parser.document, n)
-    return [str(sentence) for sentence in summary if str(sentence).strip()]
+    import numpy as np
+    import networkx as nx
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity
+
+    sentences = re.split(r'(?<=[.!?]) +', text)
+    sentences = [s.strip() for s in sentences if len(s.strip()) > 20]
+    if len(sentences) <= n:
+        return sentences
+
+    tfidf_matrix = TfidfVectorizer(stop_words='english').fit_transform(sentences)
+    sim_matrix = cosine_similarity(tfidf_matrix)
+
+    graph = nx.from_numpy_array(sim_matrix)
+    scores = nx.pagerank(graph)
+    ranked = sorted(((scores[i], s) for i, s in enumerate(sentences)), reverse=True)
+    return [s for _, s in ranked[:n]]
 
 def structure_metadata(metadata_dict):
     return {
@@ -142,5 +155,4 @@ def convert_metadata_to_csv(metadata):
             value = ", ".join([f"{k}: {', '.join(v)}" for k, v in value.items()])
         writer.writerow([key, value])
     return output.getvalue()
-
 
